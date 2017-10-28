@@ -182,6 +182,7 @@ if __name__ == '__main__':
     p.da_pad = 2
     p.da_mirror = False
     p.routing_iterations = 3
+    p.weight_loss_recon = 5e-4
 
     xp = np if p.gpu < 0 else chainer.cuda.cupy
 
@@ -224,7 +225,11 @@ if __name__ == '__main__':
                 model.cleargrads()
                 with chainer.using_config('train', True):
                     y_batch = model(x_batch)
-                    loss = separate_margin_loss(y_batch, c_batch)
+                    loss_margin = separate_margin_loss(y_batch, c_batch)
+                    y_c = y_batch[list(range(len(y_batch))), c_batch]
+                    x_recon = model.decoder(y_c)
+                    loss_recon = F.mean_squared_error(x_recon, x_batch)
+                    loss = loss_margin + p.weight_loss_recon * loss_recon
                     acc = accuracy(y_batch, c_batch)
                     loss.backward()
                 optimizer.update()
