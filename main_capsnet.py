@@ -151,9 +151,9 @@ def batch_l2_norm(x):
 
 def separate_margin_loss(x, t, m_posi=0.9, m_nega=0.1, p_lambda=0.5):
     batch_size, num_classes, dim_capsules = x.shape
-    mask = np.zeros((batch_size, num_classes), dtype=np.bool)
-    # TODO: Replace `cuda.to_cpu` with another way
-    mask[range(batch_size), cuda.to_cpu(t)] = True  # one-hot mask
+    xp = cuda.get_array_module(x)
+    mask = xp.zeros((batch_size, num_classes), dtype=np.bool)
+    mask[list(range(batch_size)), t] = True  # one-hot mask
 
     x = x.reshape(-1, dim_capsules)
     mask = mask.ravel()
