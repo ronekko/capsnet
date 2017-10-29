@@ -160,7 +160,7 @@ def separate_margin_loss(x, t, m_posi=0.9, m_nega=0.1, p_lambda=0.5):
     loss_posi = F.relu(m_posi - batch_l2_norm(x[mask])) ** 2
     loss_nega = F.relu(batch_l2_norm(x[~mask]) - m_nega) ** 2
     loss = F.sum(loss_posi) + p_lambda * F.sum(loss_nega)
-    return loss
+    return loss / batch_size
 
 
 def accuracy(x, t):
