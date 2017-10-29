@@ -118,7 +118,7 @@ class DigitCaps(chainer.Chain):
             s = s.reshape(B * J, V)
             v = squash(s)  # (BJ, V)
             if r < (self.routing_iterations - 1):  # skip at the last iteration
-                b = F.batch_matmul(u_hat, v)  # (BJ, I)
+                b += F.batch_matmul(u_hat, v).reshape(B * J, I)  # (BJ, I)
 
         v = v.reshape(B, J, V)
         return v
