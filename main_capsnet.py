@@ -57,7 +57,8 @@ class PrimaryCapsules(chainer.Chain):
 
         h = self.conv(x)  # (B, CU, H, W)
         h = h.reshape(B, C, U, H, W)
-        u = F.transpose(h, (0, 1, 3, 4, 2))
+        h = F.transpose(h, (0, 1, 3, 4, 2))
+        u = squash(h)
         return u
 
 
@@ -138,12 +139,21 @@ class Decoder(chainer.Chain):
         h = F.relu(self.fc_2(h))
         return F.sigmoid(self.fc_3(h))
 
+def squash(x, axis=-1):
+    is_last_axis = axis == -1 or axis == x.ndim - 1
+    if not is_last_axis:
+        x = F.swapaxes(x, axis, -1)
+    x_shape = x.shape
+    x = x.reshape(-1, x_shape[-1])
 
-def squash(x):
     sq_norm = F.batch_l2_norm_squared(x)
     factor = F.sqrt(sq_norm) / (1 + sq_norm)
-    return F.broadcast_to(F.expand_dims(factor, 1), x.shape) * x
+    y = F.broadcast_to(F.expand_dims(factor, 1), x.shape) * x
+    y = y.reshape(x_shape)
 
+    if not is_last_axis:
+        y = F.swapaxes(y, axis, -1)
+    return y
 
 def batch_l2_norm(x):
     return F.sqrt(F.batch_l2_norm_squared(x))
