@@ -14,31 +14,31 @@ import einsum
 
 @testing.parameterize(*testing.product_dict(
     [
-        {'subs': 'ijk,ijk->ijk', 'a_shape': (2, 3, 4), 'b_shape': (2, 3, 4),
+        {'subs': 'ijk,ijk->ijk', 'operands_shapes': ((2, 3, 4), (2, 3, 4)),
          'y_shape': (2, 3, 4)},
-        {'subs': 'ijk,ijk->ij', 'a_shape': (2, 3, 4), 'b_shape': (2, 3, 4),
+        {'subs': 'ijk,ijk->ij', 'operands_shapes': ((2, 3, 4), (2, 3, 4)),
          'y_shape': (2, 3)},
-        {'subs': 'bij,ij->bi', 'a_shape': (5, 2, 4), 'b_shape': (2, 4),
+        {'subs': 'bij,ij->bi', 'operands_shapes': ((5, 2, 4), (2, 4)),
          'y_shape': (5, 2)},
-        {'subs': 'bij,ij->ij', 'a_shape': (5, 2, 3), 'b_shape': (2, 3),
+        {'subs': 'bij,ij->ij', 'operands_shapes': ((5, 2, 3), (2, 3)),
          'y_shape': (2, 3)},
-        {'subs': 'bijk,ijk->', 'a_shape': (5, 2, 3, 4), 'b_shape': (2, 3, 4),
+        {'subs': 'bijk,ijk->', 'operands_shapes': ((5, 2, 3, 4), (2, 3, 4)),
          'y_shape': ()},
-        {'subs': 'bijk,ijk', 'a_shape': (5, 2, 3, 4), 'b_shape': (2, 3, 4),
+        {'subs': 'bijk,ijk', 'operands_shapes': ((5, 2, 3, 4), (2, 3, 4)),
          'y_shape': (5,)},
-        {'subs': 'bij,ijk->bi', 'a_shape': (5, 2, 3), 'b_shape': (2, 3, 6),
+        {'subs': 'bij,ijk->bi', 'operands_shapes': ((5, 2, 3), (2, 3, 6)),
          'y_shape': (5, 2)},
-        {'subs': 'bij,ijk->ij', 'a_shape': (5, 2, 3), 'b_shape': (2, 3, 6),
+        {'subs': 'bij,ijk->ij', 'operands_shapes': ((5, 2, 3), (2, 3, 6)),
          'y_shape': (2, 3)},
-        {'subs': 'bij,ijk->bik', 'a_shape': (5, 2, 3), 'b_shape': (2, 3, 6),
+        {'subs': 'bij,ijk->bik', 'operands_shapes': ((5, 2, 3), (2, 3, 6)),
          'y_shape': (5, 2, 6)},
-        {'subs': 'bi,ik->kb', 'a_shape': (5, 2), 'b_shape': (2, 6),
+        {'subs': 'bi,ik->kb', 'operands_shapes': ((5, 2), (2, 6)),
          'y_shape': (6, 5)},
-        {'subs': 'bij,ijl->jl', 'a_shape': (5, 2, 3), 'b_shape': (2, 3, 6),
+        {'subs': 'bij,ijl->jl', 'operands_shapes': ((5, 2, 3), (2, 3, 6)),
          'y_shape': (3, 6)},
-        {'subs': 'ij,ij->ij', 'a_shape': (2, 3), 'b_shape': (2, 3),
+        {'subs': 'ij,ij->ij', 'operands_shapes': ((2, 3), (2, 3)),
          'y_shape': (2, 3)},
-        {'subs': ' ij , ij -> ij ', 'a_shape': (2, 3), 'b_shape': (2, 3),
+        {'subs': ' ij , ij -> ij ', 'operands_shapes': ((2, 3), (2, 3)),
          'y_shape': (2, 3)},
     ],
     [
@@ -49,8 +49,10 @@ import einsum
 ))
 class TestEinsum(unittest.TestCase):
     def setUp(self):
-        self.a = numpy.random.uniform(-1, 1, self.a_shape).astype(self.dtype)
-        self.b = numpy.random.uniform(-1, 1, self.b_shape).astype(self.dtype)
+        self.operands = []
+        for shape in self.operands_shapes:
+            operand = numpy.random.uniform(-1, 1, shape).astype(self.dtype)
+            self.operands.append(operand)
         self.gy = numpy.random.uniform(-1, 1, self.y_shape).astype(self.dtype)
 
         if self.dtype == numpy.float16:
@@ -60,40 +62,41 @@ class TestEinsum(unittest.TestCase):
             self.check_forward_options = {}
             self.check_backward_options = {}
 
-    def check_forward(self, subscripts, a_data, b_data):
-        xp = cuda.get_array_module(a_data)
-        a = chainer.Variable(a_data)
-        b = chainer.Variable(b_data)
-        y = einsum.einsum(subscripts, a, b)
+    def check_forward(self, subscripts, operands_data):
+        xp = cuda.get_array_module(*operands_data)
+        operands = [
+            chainer.Variable(operand_data) for operand_data in operands_data]
+        y = einsum.einsum(subscripts, *operands)
         self.assertEqual(y.data.dtype, self.dtype)
-        y_expect = xp.asarray(numpy.einsum(self.subs, self.a, self.b))
+        y_expect = xp.asarray(numpy.einsum(self.subs, *self.operands))
         testing.assert_allclose(y_expect, y.data,
                                 **self.check_forward_options)
 
     @condition.retry(3)
     def test_forward_cpu(self):
-        self.check_forward(self.subs, self.a, self.b)
+        self.check_forward(self.subs, self.operands)
 
     @attr.gpu
     @condition.retry(3)
     def test_forward_gpu(self):
-        self.check_forward(self.subs, cuda.to_gpu(self.a), cuda.to_gpu(self.b))
+        operands = [cuda.to_gpu(operand) for operand in self.operands]
+        self.check_forward(self.subs, operands)
 
-    def check_backward(self,  subscripts, a_data, b_data, y_grad):
+    def check_backward(self,  subscripts, operands_data, y_grad):
         gradient_check.check_backward(
-            lambda a_, b_: einsum.einsum(subscripts, a_, b_),
-            (a_data, b_data), y_grad,
+            lambda *operands_: einsum.einsum(subscripts, *operands_),
+            operands_data, y_grad,
             dtype=numpy.float64, **self.check_backward_options)
 
     @condition.retry(3)
     def test_backward_cpu(self):
-        self.check_backward(self.subs, self.a, self.b, self.gy)
+        self.check_backward(self.subs, self.operands, self.gy)
 
     @attr.gpu
     @condition.retry(3)
     def test_backward_gpu(self):
-        self.check_backward(self.subs, cuda.to_gpu(self.a),
-                            cuda.to_gpu(self.b), cuda.to_gpu(self.gy))
+        operands = [cuda.to_gpu(operand) for operand in self.operands]
+        self.check_backward(self.subs, operands, cuda.to_gpu(self.gy))
 
 
 @testing.parameterize(*testing.product_dict(

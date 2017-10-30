@@ -25,11 +25,16 @@ def _parse_subscripts(subscripts):
     return in_subs, out_sub
 
 
-def einsum(subscripts, a, b):
+def einsum(subscripts, *operands):
     """Computs the einsum for Chainer's Variable.
     Note that this is a very early implementation and supports only a few
     functionalities of original numpy.einsum function.
     """
+
+    if not len(operands) == 2:
+        raise ValueError(
+            'Currently, `*operands` only supports the case of 2 arguments.')
+    a, b = operands
 
     in_subs, out_subs = _parse_subscripts(subscripts)
     a_subs, b_subs = in_subs
