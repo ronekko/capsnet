@@ -126,18 +126,27 @@ class DigitCaps(chainer.Chain):
 
 
 class Decoder(chainer.Chain):
-    def __init__(self):
+    def __init__(self, target_shape=(1, 28, 28)):
 
         super(Decoder, self).__init__()
+        target_size = 1
+        for s in target_shape:
+            target_size *= s
         with self.init_scope():
             self.fc_1 = L.Linear(16, 512)
             self.fc_2 = L.Linear(512, 1024)
-            self.fc_3 = L.Linear(1024, 784)
+            self.fc_3 = L.Linear(1024, target_size)
+        self.target_shape = target_shape
 
     def __call__(self, x):
         h = F.relu(self.fc_1(x))
         h = F.relu(self.fc_2(h))
-        return F.sigmoid(self.fc_3(h))
+        y = F.sigmoid(self.fc_3(h))
+
+        batch_size = len(x)
+        out_shape = (batch_size,) + self.target_shape
+        return y.reshape(out_shape)
+
 
 def squash(x, axis=-1):
     is_last_axis = axis == -1 or axis == x.ndim - 1
