@@ -239,9 +239,9 @@ if __name__ == '__main__':
             perm = np.random.permutation(num_train)
             index_batches = np.split(perm, num_train // p.batch_size)
             for i_batch in tqdm(index_batches):
-                x_batch = random_augment_padding(x_train[i_batch],
-                                                 p.da_pad, p.da_mirror)
-                x_batch = xp.asarray(x_batch)
+                x_batch_cpu = random_augment_padding(x_train[i_batch],
+                                                     p.da_pad, p.da_mirror)
+                x_batch = xp.asarray(x_batch_cpu)
                 c_batch = xp.asarray(c_train[i_batch])
                 model.cleargrads()
                 with chainer.using_config('train', True):
@@ -262,16 +262,24 @@ if __name__ == '__main__':
             train_loss_log.append(epoch_loss)
             train_acc_log.append(epoch_acc)
 
+            x_train_orig = np.squeeze(x_batch_cpu)
+            x_train_recon = np.squeeze(cuda.to_cpu(x_recon.data))
+
             # Evaluate the test set
             losses = []
             accs = []
             for i in tqdm(range(0, num_test, p.batch_size)):
-                x_batch = xp.asarray(x_test[i:i+p.batch_size])
+                x_batch_cpu = x_test[i:i+p.batch_size]
+                x_batch = xp.asarray(x_batch_cpu)
                 c_batch = xp.asarray(c_test[i:i+p.batch_size])
                 with chainer.no_backprop_mode():
                     with chainer.using_config('train', False):
                         y_batch = model(x_batch)
-                        loss = separate_margin_loss(y_batch, c_batch)
+                        loss_margin = separate_margin_loss(y_batch, c_batch)
+                        y_c = y_batch[list(range(len(y_batch))), c_batch]
+                        x_recon = model.decoder(y_c)
+                        loss_recon = F.mean_squared_error(x_recon, x_batch)
+                        loss = loss_margin + p.weight_loss_recon * loss_recon
                         acc = accuracy(y_batch, c_batch)
                 losses.append(loss.data)
                 accs.append(acc.data)
@@ -279,6 +287,9 @@ if __name__ == '__main__':
             test_acc = np.mean(chainer.cuda.to_cpu(xp.stack(accs)))
             test_loss_log.append(test_loss)
             test_acc_log.append(test_acc)
+
+            x_test_orig = np.squeeze(x_batch_cpu)
+            x_test_recon = np.squeeze(cuda.to_cpu(x_recon.data))
 
             # Keep the best model so far
             if test_acc > best_test_acc:
@@ -294,20 +305,34 @@ if __name__ == '__main__':
                                                      best_epoch))
             print(p)
 
-            plt.figure(figsize=(10, 4))
-            plt.title('Loss')
-            plt.plot(train_loss_log, label='train loss')
-            plt.plot(test_loss_log, label='test loss')
-            plt.legend()
-            plt.grid()
+            _, (ax_loss, ax_acc) = plt.subplots(1, 2, figsize=(9, 4))
+            ax_loss.set_title('Loss')
+            ax_loss.plot(train_loss_log, label='train loss')
+            ax_loss.plot(test_loss_log, label='test loss')
+            ax_loss.set_ylim(0, 0.05)
+            ax_loss.legend()
+            ax_loss.grid()
+
+            ax_acc.set_title('Accucary')
+            ax_acc.plot(train_acc_log, label='train acc')
+            ax_acc.plot(test_acc_log, label='test acc')
+            ax_acc.set_ylim(0.98, 1)
+            ax_acc.legend(loc='best')
+            ax_acc.grid()
+            plt.tight_layout()
             plt.show()
 
-            plt.figure(figsize=(10, 4))
-            plt.title('Accucary')
-            plt.plot(train_acc_log, label='train acc')
-            plt.plot(test_acc_log, label='test acc')
-            plt.legend()
-            plt.grid()
+            # Show original and reconstructed training images
+            _, axs = plt.subplots(1, 4)
+            index = np.random.choice(len(x_test_orig))
+            images = (x_train_orig[0], x_train_recon[0],
+                      x_test_orig[index], x_test_recon[index])
+            titles = ('train orig', 'train recon', 'test orig', 'test recon')
+            for ax, image, title in zip(axs, images, titles):
+                ax.matshow(image, cmap=plt.cm.gray)
+                ax.set_title(title)
+                ax.axis('off')
+            plt.tight_layout()
             plt.show()
 
     except KeyboardInterrupt:
