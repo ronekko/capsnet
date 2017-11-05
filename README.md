@@ -1,1 +1,1 @@
-# capnet
+# CapsNet

@@ -116,7 +116,6 @@ class DigitCaps(chainer.Chain):
             c = F.softmax(b, axis=1)  # (BJ, I)
             # (BJ, I) @ (BJ, I, V) -> (BJ, V)
             s = F.batch_matmul(c, u_hat, transa=True).reshape(B * J, V)
-            s = s.reshape(B * J, V)
             v = squash(s)  # (BJ, V)
             if r < (self.routing_iterations - 1):  # skip at the last iteration
                 b += F.batch_matmul(u_hat, v).reshape(B * J, I)  # (BJ, I)
@@ -164,6 +163,7 @@ def squash(x, axis=-1):
         y = F.swapaxes(y, axis, -1)
     return y
 
+
 def batch_l2_norm(x):
     return F.sqrt(F.batch_l2_norm_squared(x))
 
@@ -174,10 +174,10 @@ def separate_margin_loss(x, t, m_posi=0.9, m_nega=0.1, p_lambda=0.5):
     mask = xp.zeros((batch_size, num_classes), dtype=np.bool)
     mask[list(range(batch_size)), t] = True  # one-hot mask
 
-    x = x.reshape(-1, dim_capsules)
+    x_norm = batch_l2_norm(x.reshape(-1, dim_capsules))
     mask = mask.ravel()
-    loss_posi = F.relu(m_posi - batch_l2_norm(x[mask])) ** 2
-    loss_nega = F.relu(batch_l2_norm(x[~mask]) - m_nega) ** 2
+    loss_posi = F.relu(m_posi - x_norm[mask]) ** 2
+    loss_nega = F.relu(x_norm[~mask] - m_nega) ** 2
     loss = F.sum(loss_posi) + p_lambda * F.sum(loss_nega)
     return loss / batch_size
 
