@@ -9,7 +9,7 @@ from chainer import testing
 from chainer.testing import attr
 from chainer.testing import condition
 
-import einsum_function as einsum
+import einsum
 
 
 @testing.parameterize(*testing.product_dict(
