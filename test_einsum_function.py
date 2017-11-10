@@ -14,10 +14,36 @@ import einsum_function as einsum
 
 @testing.parameterize(*testing.product_dict(
     [
+        # 1 array
+        {'subs': 'ij->j',
+         'operands_shapes': ((2, 3),),
+         'y_shape': (3,)},
+        {'subs': 'ij->',
+         'operands_shapes': ((2, 3),),
+         'y_shape': ()},
+        {'subs': 'ij->ij',
+         'operands_shapes': ((2, 3),),
+         'y_shape': (2, 3)},
+        {'subs': 'ij->ji',
+         'operands_shapes': ((2, 3),),
+         'y_shape': (3, 2)},
+         # TODO: failed cases
+#        {'subs': 'ij',
+#         'operands_shapes': ((2, 3),),
+#         'y_shape': (2, 3)},
+#        {'subs': 'ii',
+#         'operands_shapes': ((3, 3),),
+#         'y_shape': ()},
+
+        # 2 arrays
         {'subs': 'ijk,ijk->ijk', 'operands_shapes': ((2, 3, 4), (2, 3, 4)),
          'y_shape': (2, 3, 4)},
+        {'subs': 'ijk,ijk', 'operands_shapes': ((2, 3, 4), (2, 3, 4)),
+         'y_shape': ()},
         {'subs': 'ijk,ijk->ij', 'operands_shapes': ((2, 3, 4), (2, 3, 4)),
          'y_shape': (2, 3)},
+        {'subs': 'ijk,jk->ik', 'operands_shapes': ((2, 3, 4), (3, 4)),
+         'y_shape': (2, 4)},
         {'subs': 'bij,ij->bi', 'operands_shapes': ((5, 2, 4), (2, 4)),
          'y_shape': (5, 2)},
         {'subs': 'bij,ij->ij', 'operands_shapes': ((5, 2, 3), (2, 3)),
@@ -38,6 +64,10 @@ import einsum_function as einsum
          'y_shape': (3, 6)},
         {'subs': 'ij,ij->ij', 'operands_shapes': ((2, 3), (2, 3)),
          'y_shape': (2, 3)},
+        {'subs': 'ij,kl->ijkl', 'operands_shapes': ((2, 3), (4, 5)),
+         'y_shape': (2, 3, 4, 5)},
+        {'subs': 'ij,kl->kilj', 'operands_shapes': ((2, 3), (4, 5)),
+         'y_shape': (4, 2, 5, 3)},
 
         # 3 arrays
         {'subs': 'ij,jk,kl->il',
@@ -49,6 +79,9 @@ import einsum_function as einsum
         {'subs': 'bijk,ijk,jkl->bl',
          'operands_shapes': ((5, 2, 3, 4), (2, 3, 4), (3, 4, 6)),
          'y_shape': (5, 6)},
+        {'subs': 'bijk,ijk,jkl->j',
+         'operands_shapes': ((5, 2, 3, 4), (2, 3, 4), (3, 4, 6)),
+         'y_shape': (3,)},
         {'subs': 'bijk,ijk,jkl->b',
          'operands_shapes': ((5, 2, 3, 4), (2, 3, 4), (3, 4, 6)),
          'y_shape': (5,)},
