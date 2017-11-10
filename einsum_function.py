@@ -5,6 +5,16 @@ import chainer
 import chainer.functions as F
 
 
+def _removed(seq, index):
+    seq_len = len(seq)
+    if not -seq_len <= index < seq_len:
+        raise IndexError(
+            'Index must be {} <= index < {}'.format(-seq_len, seq_len))
+    if index < 0:
+        index = seq_len + index
+    return seq[:index] + seq[index+1:]
+
+
 def _parse_subscripts(subscripts):
     if '->' in subscripts:
         has_arrow = True
@@ -28,12 +38,11 @@ def _parse_subscripts(subscripts):
     # 片方のみに含まれる添字(すなわち単純sumの添字)をout_subに付け足す
     broadcast_subs = []
     in_sub_sets = [set(sub) for sub in in_subs]
-    for i, sub_set in enumerate(in_sub_sets):
-        others = in_sub_sets.copy()
-        others.pop(i)
-        others = set.union(set(out_sub), *others)
-        broadcast_sub_set = sub_set - others
-        broadcast_subs.append(''.join(broadcast_sub_set))
+    for i, in_sub in enumerate(in_subs):
+        others = set.union(set(out_sub), *_removed(in_sub_sets, i))
+        broadcast_sub_set = set(in_sub) - others
+        broadcast_subs.append(
+            ''.join([s for s in in_sub if s in broadcast_sub_set]))
     return in_subs, out_sub, broadcast_subs
 
 
@@ -66,27 +75,18 @@ class Einsum(chainer.Function):
         gxs = []
         for i in range(len(inputs)):
             sub_to_size = broadcast_sub_sizes[i]
-            gy_tmp = gy.reshape(gy.shape + (1,) * len(sub_to_size))
-            gy_tmp = xp.broadcast_to(gy_tmp, gy.shape + tuple(sub_to_size.values()))
-            out_sub_tmp = out_sub + ''.join(sub_to_size.keys())
-            sub = ','.join([out_sub_tmp, *removed(in_subs, i)])
+            gy_expanded = gy.reshape(gy.shape + (1,) * len(sub_to_size))
+            gy_broadcasted = xp.broadcast_to(
+                gy_expanded, gy.shape + tuple(sub_to_size.values()))
+            sub = out_sub + ''.join(sub_to_size.keys())
+            sub = ','.join([sub, *_removed(in_subs, i)])
             sub += '->{}'.format(in_subs[i])
-            gxs.append(xp.einsum(sub, gy_tmp, *removed(inputs, i)))
+            gxs.append(xp.einsum(sub, gy_broadcasted, *_removed(inputs, i)))
         return tuple(gxs)
 
 
 def einsum(subscripts, *operands):
     return Einsum(subscripts)(*operands)
-
-
-def removed(seq, index):
-    seq_len = len(seq)
-    if not -seq_len <= index < seq_len:
-        raise IndexError(
-            'Index must be {} <= index < {}'.format(-seq_len, seq_len))
-    if index < 0:
-        index = seq_len + index
-    return seq[:index] + seq[index+1:]
 
 
 if __name__ == '__main__':
