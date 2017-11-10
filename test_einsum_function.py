@@ -38,6 +38,25 @@ import einsum_function as einsum
          'y_shape': (3, 6)},
         {'subs': 'ij,ij->ij', 'operands_shapes': ((2, 3), (2, 3)),
          'y_shape': (2, 3)},
+
+        # 3 arrays
+        {'subs': 'ij,jk,kl->il',
+         'operands_shapes': ((2, 3), (3, 4), (4, 5)),
+         'y_shape': (2, 5)},
+        {'subs': 'ij,jk,kl->i',
+         'operands_shapes': ((2, 3), (3, 4), (4, 5)),
+         'y_shape': (2)},
+        {'subs': 'bijk,ijk,jkl->bl',
+         'operands_shapes': ((5, 2, 3, 4), (2, 3, 4), (3, 4, 6)),
+         'y_shape': (5, 6)},
+        {'subs': 'bijk,ijk,jkl->b',
+         'operands_shapes': ((5, 2, 3, 4), (2, 3, 4), (3, 4, 6)),
+         'y_shape': (5,)},
+        {'subs': 'bijk,ijk,jkl->',
+         'operands_shapes': ((5, 2, 3, 4), (2, 3, 4), (3, 4, 6)),
+         'y_shape': ()},
+
+        # subscripts with white spaces
         {'subs': ' ij , ij -> ij ', 'operands_shapes': ((2, 3), (2, 3)),
          'y_shape': (2, 3)},
     ],

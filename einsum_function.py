@@ -51,7 +51,6 @@ class Einsum(chainer.Function):
 
     def backward(self, inputs, grad_outputs):
         xp = chainer.cuda.get_array_module(*inputs)
-        a, b = inputs
         gy, = grad_outputs
 
         broadcast_sub_sizes = []
@@ -64,27 +63,30 @@ class Einsum(chainer.Function):
                     sub_to_size[sub] = in_array.shape[axis]
             broadcast_sub_sizes.append(sub_to_size)
 
-
-        # TODO: Make below code clean (and simple)
-        a_sub, b_sub = in_subs
-        # for ga
-        sub_to_size = broadcast_sub_sizes[0]
-        gy_tmp = gy.reshape(gy.shape + (1,) * len(sub_to_size))
-        gy_tmp = xp.broadcast_to(gy_tmp, gy.shape + tuple(sub_to_size.values()))
-        out_sub_tmp = out_sub + ''.join(sub_to_size.keys())
-        ga = xp.einsum('{},{}->{}'.format(out_sub_tmp, b_sub, a_sub), gy_tmp, b)
-        # for gb
-        sub_to_size = broadcast_sub_sizes[1]
-        gy_tmp = gy.reshape(gy.shape + (1,) * len(sub_to_size))
-        gy_tmp = xp.broadcast_to(gy_tmp, gy.shape + tuple(sub_to_size.values()))
-        out_sub_tmp = out_sub + ''.join(sub_to_size.keys())
-        gb = xp.einsum('{},{}->{}'.format(out_sub_tmp,a_sub,  b_sub), gy_tmp, a)
-
-        return ga, gb
+        gxs = []
+        for i in range(len(inputs)):
+            sub_to_size = broadcast_sub_sizes[i]
+            gy_tmp = gy.reshape(gy.shape + (1,) * len(sub_to_size))
+            gy_tmp = xp.broadcast_to(gy_tmp, gy.shape + tuple(sub_to_size.values()))
+            out_sub_tmp = out_sub + ''.join(sub_to_size.keys())
+            sub = ','.join([out_sub_tmp, *removed(in_subs, i)])
+            sub += '->{}'.format(in_subs[i])
+            gxs.append(xp.einsum(sub, gy_tmp, *removed(inputs, i)))
+        return tuple(gxs)
 
 
 def einsum(subscripts, *operands):
     return Einsum(subscripts)(*operands)
+
+
+def removed(seq, index):
+    seq_len = len(seq)
+    if not -seq_len <= index < seq_len:
+        raise IndexError(
+            'Index must be {} <= index < {}'.format(-seq_len, seq_len))
+    if index < 0:
+        index = seq_len + index
+    return seq[:index] + seq[index+1:]
 
 
 if __name__ == '__main__':
@@ -93,8 +95,10 @@ if __name__ == '__main__':
     xp = np
 #    subs = 'bij,ijk->jk'
 #    operands_shapes = ((5, 2, 3), (2, 3, 6))
-    subs = 'bijk,ijk->'
-    operands_shapes = ((5, 2, 3, 4), (2, 3, 4))
+#    subs = 'bijk,ijk->'
+#    operands_shapes = ((5, 2, 3, 4), (2, 3, 4))
+    subs = 'bijk,ijk,jkl->'
+    operands_shapes = ((5, 2, 3, 4), (2, 3, 4), (3, 4, 5))
 
     operands = []
     for shape in operands_shapes:
