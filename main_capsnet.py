@@ -191,14 +191,14 @@ if __name__ == '__main__':
     # Hyperparameters
     p = SimpleNamespace()
     p.gpu = 0
-    p.num_epochs = 300
-    p.batch_size = 80
+    p.num_epochs = 3000
+    p.batch_size = 125
     p.lr = 0.001
     p.weight_decay = 0  # 1e-4
     p.da_pad = 2
     p.da_mirror = False
     p.routing_iterations = 3
-    p.weight_loss_recon = 5e-4
+    p.weight_loss_recon = 5e-1  # 5e-1 may be good? though 5e-4 in the paper
 
     xp = np if p.gpu < 0 else chainer.cuda.cupy
 
