@@ -27,13 +27,13 @@ import einsum
         {'subs': 'ij->ji',
          'operands_shapes': ((2, 3),),
          'y_shape': (3, 2)},
-         # TODO: failed cases
-#        {'subs': 'ij',
-#         'operands_shapes': ((2, 3),),
-#         'y_shape': (2, 3)},
-#        {'subs': 'ii',
-#         'operands_shapes': ((3, 3),),
-#         'y_shape': ()},
+        # TODO: failed cases
+        # {'subs': 'ij',
+        #  'operands_shapes': ((2, 3),),
+        #  'y_shape': (2, 3)},
+        # {'subs': 'ii',
+        #  'operands_shapes': ((3, 3),),
+        #  'y_shape': ()},
 
         # 2 arrays
         {'subs': 'ijk,ijk->ijk', 'operands_shapes': ((2, 3, 4), (2, 3, 4)),
@@ -68,6 +68,12 @@ import einsum
          'y_shape': (2, 3, 4, 5)},
         {'subs': 'ij,kl->kilj', 'operands_shapes': ((2, 3), (4, 5)),
          'y_shape': (4, 2, 5, 3)},
+        # TODO: failed cases
+        # cupy.einsum tries to make a huge array internally and fails
+        # {'subs': 'biu,ijvu->bjiv',
+        # 'operands_shapes': ((125, 1152, 8), (1152, 10, 16, 8)),
+        # 'y_shape': (125, 10, 1152, 16)},
+
 
         # 3 arrays
         {'subs': 'ij,jk,kl->il',
