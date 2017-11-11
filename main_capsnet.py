@@ -109,10 +109,14 @@ class DigitCaps(chainer.Chain):
 
         for r in range(self.routing_iterations):
             c = F.softmax(b, axis=2)  # (B, J, I)
-            s = einsum('bji,bjiv->bjv', c, u_hat)
+            # s = einsum('bji,bjiv->bjv', c, u_hat)
+            c = F.broadcast_to(F.expand_dims(c, 3), u_hat.shape)
+            s = F.sum(c * u_hat, 2)
             v = squash(s, axis=-1)
             if r < (self.routing_iterations - 1):  # skip at the last iteration
-                b += einsum('bjiv,bjv->bji', u_hat, v)
+                # b += einsum('bjiv,bjv->bji', u_hat, v)
+                v = F.broadcast_to(F.expand_dims(v, 2), u_hat.shape)
+                b += F.sum(u_hat * v, 3)
 
         return v
 
