@@ -23,6 +23,8 @@ from chainer import initializers
 from chainer import optimizers
 from datasets import load_mnist_as_ndarray, random_augment_padding
 
+from einsum_function import einsum
+
 
 class CapsNet(chainer.Chain):
     def __init__(self, routing_iterations=3):
@@ -76,7 +78,7 @@ class DigitCaps(chainer.Chain):
         super(DigitCaps, self).__init__()
         with self.init_scope():
             W_initializer = initializers._get_initializer(initial_W)
-            self.W = chainer.Parameter(W_initializer, (I, J * V, U), 'W')
+            self.W = chainer.Parameter(W_initializer, (J, I, V, U), 'W')
             if learn_b_init:
                 if initial_b_init is None:
                     initial_b_init = 0
@@ -93,15 +95,9 @@ class DigitCaps(chainer.Chain):
         B, C, H, W, U = u.shape
         I = C * H * W
 
-        # Change u.shape from (B, C, H, W, U) -> (CHW, B, U) = (I, B, U)
+        # Change u.shape from (B, C, H, W, U) -> (B, CHW, U) = (B, I, U)
         u = u.reshape(B, C * H * W, U)
-        u = F.transpose(u, (1, 0, 2))
-
-        u_hat = F.batch_matmul(u, self.W, transb=True)
-        # Change u_hat.shape from (I, B, JV) -> (BJ, I, V)
-        u_hat = u_hat.reshape(I, B, J, V)
-        u_hat = F.transpose(u_hat, (1, 2, 0, 3))
-        u_hat = u_hat.reshape(B * J, I, V)
+        u_hat = einsum('biu,jivu->bjiv', u, self.W)
 
         # Procedure 1
         xp = self.xp
@@ -109,18 +105,15 @@ class DigitCaps(chainer.Chain):
             b = self.b_init
         else:
             b = chainer.Variable(xp.zeros((J, I), dtype='f'))
-        b = F.tile(b, (B, 1, 1))  # (B, J, I)
-        b = b.reshape(B * J, I)  # (BJ, I)
+        b = F.broadcast_to(b, (B, J, I))
 
         for r in range(self.routing_iterations):
-            c = F.softmax(b, axis=1)  # (BJ, I)
-            # (BJ, I) @ (BJ, I, V) -> (BJ, V)
-            s = F.batch_matmul(c, u_hat, transa=True).reshape(B * J, V)
-            v = squash(s)  # (BJ, V)
+            c = F.softmax(b, axis=2)  # (B, J, I)
+            s = einsum('bji,bjiv->bjv', c, u_hat)
+            v = squash(s, axis=-1)
             if r < (self.routing_iterations - 1):  # skip at the last iteration
-                b += F.batch_matmul(u_hat, v).reshape(B * J, I)  # (BJ, I)
+                b += einsum('bjiv,bjv->bji', u_hat, v)
 
-        v = v.reshape(B, J, V)
         return v
 
 
