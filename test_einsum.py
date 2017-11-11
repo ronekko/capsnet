@@ -14,10 +14,36 @@ import einsum
 
 @testing.parameterize(*testing.product_dict(
     [
+        # 1 array
+        {'subs': 'ij->j',
+         'operands_shapes': ((2, 3),),
+         'y_shape': (3,)},
+        {'subs': 'ij->',
+         'operands_shapes': ((2, 3),),
+         'y_shape': ()},
+        {'subs': 'ij->ij',
+         'operands_shapes': ((2, 3),),
+         'y_shape': (2, 3)},
+        {'subs': 'ij->ji',
+         'operands_shapes': ((2, 3),),
+         'y_shape': (3, 2)},
+        # TODO: failed cases
+        # {'subs': 'ij',
+        #  'operands_shapes': ((2, 3),),
+        #  'y_shape': (2, 3)},
+        # {'subs': 'ii',
+        #  'operands_shapes': ((3, 3),),
+        #  'y_shape': ()},
+
+        # 2 arrays
         {'subs': 'ijk,ijk->ijk', 'operands_shapes': ((2, 3, 4), (2, 3, 4)),
          'y_shape': (2, 3, 4)},
+        {'subs': 'ijk,ijk', 'operands_shapes': ((2, 3, 4), (2, 3, 4)),
+         'y_shape': ()},
         {'subs': 'ijk,ijk->ij', 'operands_shapes': ((2, 3, 4), (2, 3, 4)),
          'y_shape': (2, 3)},
+        {'subs': 'ijk,jk->ik', 'operands_shapes': ((2, 3, 4), (3, 4)),
+         'y_shape': (2, 4)},
         {'subs': 'bij,ij->bi', 'operands_shapes': ((5, 2, 4), (2, 4)),
          'y_shape': (5, 2)},
         {'subs': 'bij,ij->ij', 'operands_shapes': ((5, 2, 3), (2, 3)),
@@ -34,15 +60,47 @@ import einsum
          'y_shape': (5, 2, 6)},
         {'subs': 'bi,ik->kb', 'operands_shapes': ((5, 2), (2, 6)),
          'y_shape': (6, 5)},
-        {'subs': 'bij,ijl->jl', 'operands_shapes': ((5, 2, 3), (2, 3, 6)),
+        {'subs': 'bij,ijk->jk', 'operands_shapes': ((5, 2, 3), (2, 3, 6)),
          'y_shape': (3, 6)},
         {'subs': 'ij,ij->ij', 'operands_shapes': ((2, 3), (2, 3)),
          'y_shape': (2, 3)},
+        {'subs': 'ij,kl->ijkl', 'operands_shapes': ((2, 3), (4, 5)),
+         'y_shape': (2, 3, 4, 5)},
+        {'subs': 'ij,kl->kilj', 'operands_shapes': ((2, 3), (4, 5)),
+         'y_shape': (4, 2, 5, 3)},
+        # TODO: failed cases
+        # cupy.einsum tries to make a huge array internally and fails
+        # {'subs': 'biu,ijvu->bjiv',
+        # 'operands_shapes': ((125, 1152, 8), (1152, 10, 16, 8)),
+        # 'y_shape': (125, 10, 1152, 16)},
+
+
+        # 3 arrays
+        {'subs': 'ij,jk,kl->il',
+         'operands_shapes': ((2, 3), (3, 4), (4, 5)),
+         'y_shape': (2, 5)},
+        {'subs': 'ij,jk,kl->i',
+         'operands_shapes': ((2, 3), (3, 4), (4, 5)),
+         'y_shape': (2)},
+        {'subs': 'bijk,ijk,jkl->bl',
+         'operands_shapes': ((5, 2, 3, 4), (2, 3, 4), (3, 4, 6)),
+         'y_shape': (5, 6)},
+        {'subs': 'bijk,ijk,jkl->j',
+         'operands_shapes': ((5, 2, 3, 4), (2, 3, 4), (3, 4, 6)),
+         'y_shape': (3,)},
+        {'subs': 'bijk,ijk,jkl->b',
+         'operands_shapes': ((5, 2, 3, 4), (2, 3, 4), (3, 4, 6)),
+         'y_shape': (5,)},
+        {'subs': 'bijk,ijk,jkl->',
+         'operands_shapes': ((5, 2, 3, 4), (2, 3, 4), (3, 4, 6)),
+         'y_shape': ()},
+
+        # subscripts with white spaces
         {'subs': ' ij , ij -> ij ', 'operands_shapes': ((2, 3), (2, 3)),
          'y_shape': (2, 3)},
     ],
     [
-#        {'dtype': numpy.float16},
+#        {'dtype': numpy.float16},  # TODO: fix np.einsum for float16
         {'dtype': numpy.float32},
         {'dtype': numpy.float64},
     ],
@@ -83,6 +141,7 @@ class TestEinsum(unittest.TestCase):
         self.check_forward(self.subs, operands)
 
     def check_backward(self,  subscripts, operands_data, y_grad):
+        print(subscripts)
         gradient_check.check_backward(
             lambda *operands_: einsum.einsum(subscripts, *operands_),
             operands_data, y_grad,
@@ -101,20 +160,27 @@ class TestEinsum(unittest.TestCase):
 
 @testing.parameterize(*testing.product_dict(
     [
-        {'sub': 'ijk,ijk', 'in_subs': ['ijk', 'ijk'], 'out_sub': ''},
-        {'sub': 'ijk,ijk->ij', 'in_subs': ['ijk', 'ijk'], 'out_sub': 'ij'},
-        {'sub': 'bijk,ijk->bi', 'in_subs': ['bijk', 'ijk'], 'out_sub': 'bi'},
-        {'sub': 'bij,ij->', 'in_subs': ['bij', 'ij'], 'out_sub': ''},
-        {'sub': 'bij,ij', 'in_subs': ['bij', 'ij'], 'out_sub': 'b'},
+        {'sub': 'ijk,ijk', 'in_subs': ['ijk', 'ijk'], 'out_sub': '',
+         'broadcast_subs': ['', '']},
+        {'sub': 'ijk,ijk->ij', 'in_subs': ['ijk', 'ijk'], 'out_sub': 'ij',
+         'broadcast_subs': ['', '']},
+        {'sub': 'bijk,ijk->bi', 'in_subs': ['bijk', 'ijk'], 'out_sub': 'bi',
+         'broadcast_subs': ['', '']},
+        {'sub': 'bij,ij->', 'in_subs': ['bij', 'ij'], 'out_sub': '',
+         'broadcast_subs': ['b', '']},
+        {'sub': 'bij,ij', 'in_subs': ['bij', 'ij'], 'out_sub': 'b',
+         'broadcast_subs': ['', '']},
         {'sub': ' bijk , ijk -> bi ',
-         'in_subs': ['bijk', 'ijk'], 'out_sub': 'bi'},
+         'in_subs': ['bijk', 'ijk'], 'out_sub': 'bi',
+         'broadcast_subs': ['', '']},
     ]
 ))
 class TestParseSubscripts(unittest.TestCase):
 
     def check_parse_subscripts(
-            self, subscripts, expected_in_subs, expected_out_sub):
-        in_subs, out_sub = einsum._parse_subscripts(subscripts)
+            self, subscripts, expected_in_subs, expected_out_sub,
+            expected_broadcast_subs):
+        in_subs, out_sub, broadcast_subs = einsum._parse_subscripts(subscripts)
         self.assertEqual(out_sub, expected_out_sub)
         for in_sub, expected_in_sub in zip(in_subs, expected_in_subs):
             assert in_sub == expected_in_sub, '''
@@ -123,9 +189,15 @@ class TestParseSubscripts(unittest.TestCase):
         assert out_sub == expected_out_sub, '''
     actual  : {}
     expected: {}'''.format(out_sub, expected_out_sub)
+        for broadcast_sub, expected_broadcast_sub in zip(
+                broadcast_subs, expected_broadcast_subs):
+            assert broadcast_sub == expected_broadcast_sub, '''
+    actual  : {}
+    expected: {}'''.format(broadcast_sub, expected_broadcast_sub)
 
     def test_parse_subscripts(self):
-        self.check_parse_subscripts(self.sub, self.in_subs, self.out_sub)
+        self.check_parse_subscripts(self.sub, self.in_subs, self.out_sub,
+                                    self.broadcast_subs)
 
 
 testing.run_module(__name__, __file__)

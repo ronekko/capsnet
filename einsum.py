@@ -1,6 +1,18 @@
 from collections import OrderedDict
 
+import numpy
+import chainer
 import chainer.functions as F
+
+
+def _removed(seq, index):
+    seq_len = len(seq)
+    if not -seq_len <= index < seq_len:
+        raise IndexError(
+            'Index must be {} <= index < {}'.format(-seq_len, seq_len))
+    if index < 0:
+        index = seq_len + index
+    return seq[:index] + seq[index+1:]
 
 
 def _parse_subscripts(subscripts):
@@ -22,129 +34,76 @@ def _parse_subscripts(subscripts):
             for char in subs:
                 if char not in shared_chars:
                     out_sub += char
-    return in_subs, out_sub
+
+    # 片方のみに含まれる添字(すなわち単純sumの添字)をout_subに付け足す
+    broadcast_subs = []
+    in_sub_sets = [set(sub) for sub in in_subs]
+    for i, in_sub in enumerate(in_subs):
+        others = set.union(set(out_sub), *_removed(in_sub_sets, i))
+        broadcast_sub_set = set(in_sub) - others
+        broadcast_subs.append(
+            ''.join([s for s in in_sub if s in broadcast_sub_set]))
+    return in_subs, out_sub, broadcast_subs
+
+
+class Einsum(chainer.Function):
+    def __init__(self, subscripts):
+        self.subscripts = subscripts
+
+    def forward(self, inputs):
+        self.retain_inputs(tuple(range(len(inputs))))
+        xp = chainer.cuda.get_array_module(*inputs)
+        y = xp.einsum(self.subscripts, *inputs)
+        if xp is numpy:
+            y = numpy.asarray(y)
+        return y,
+
+    def backward(self, inputs, grad_outputs):
+        xp = chainer.cuda.get_array_module(*inputs)
+        gy, = grad_outputs
+
+        broadcast_sub_sizes = []
+        in_subs, out_sub, broadcast_subs = _parse_subscripts(self.subscripts)
+        for in_array, in_sub, bc_sub in zip(inputs, in_subs, broadcast_subs):
+            sub_to_size = {}
+            for sub in bc_sub:
+                axis = in_sub.find(sub)
+                if axis != -1:
+                    sub_to_size[sub] = in_array.shape[axis]
+            broadcast_sub_sizes.append(sub_to_size)
+
+        gxs = []
+        for i in range(len(inputs)):
+            sub_to_size = broadcast_sub_sizes[i]
+            gy_expanded = gy.reshape(gy.shape + (1,) * len(sub_to_size))
+            gy_broadcasted = xp.broadcast_to(
+                gy_expanded, gy.shape + tuple(sub_to_size.values()))
+            sub = out_sub + ''.join(sub_to_size.keys())
+            sub = ','.join([sub, *_removed(in_subs, i)])
+            sub += '->{}'.format(in_subs[i])
+            gxs.append(xp.einsum(sub, gy_broadcasted, *_removed(inputs, i)))
+        return tuple(gxs)
 
 
 def einsum(subscripts, *operands):
-    """Computs the einsum for Chainer's Variable.
-    Note that this is a very early implementation and supports only a few
-    functionalities of original numpy.einsum function.
-    """
+    return Einsum(subscripts)(*operands)
 
-    if not len(operands) == 2:
-        raise ValueError(
-            'Currently, `*operands` only supports the case of 2 arguments.')
-    a, b = operands
 
-    in_subs, out_subs = _parse_subscripts(subscripts)
-    a_subs, b_subs = in_subs
+if __name__ == '__main__':
+    import numpy as np
 
-    a_shape = OrderedDict()
-    for sub, length in zip(a_subs, a.shape):
-        a_shape[sub] = length
-    b_shape = OrderedDict()
-    for sub, length in zip(b_subs, b.shape):
-        b_shape[sub] = length
+    xp = np
+#    subs = 'bij,ijk->jk'
+#    operands_shapes = ((5, 2, 3), (2, 3, 6))
+#    subs = 'bijk,ijk->'
+#    operands_shapes = ((5, 2, 3, 4), (2, 3, 4))
+    subs = 'bijk,ijk,jkl->'
+    operands_shapes = ((5, 2, 3, 4), (2, 3, 4), (3, 4, 5))
 
-    # Classify subscripts in a_subs and b_subs into 4 classes.
-    # There are 4 sets of subscripts that are:
-    # set_1: included in a_subs and b_subs and out_subs
-    # set_2: included in a_subs and b_subs but not in out_subs
-    # set_3a, set_3d: included in only a_subs or b_subs, and in out_subs
-    # set_4a, set_4d: included in only a_subs or b_subs, and not in out_subs
-    set_a = set(a_subs)
-    set_b = set(b_subs)
-    set_out = set(out_subs)
+    operands = []
+    for shape in operands_shapes:
+        operands.append(chainer.Variable(np.random.randn(*shape).astype('f')))
 
-    set_1 = set_a & set_b
-    set_3a = set_a - set_1
-    set_3b = set_b - set_1
-    set_2 = set_1 - set_out
-    set_1 = set_1 - set_2
-    set_4a = set_3a - set_out
-    set_3a = set_3a - set_4a
-    set_4b = set_3b - set_out
-    set_3b = set_3b - set_4b
-
-    #####################################################
-    # Arrange a and b to prepare to input to F.batch_matmul
-    # For the array a
-    a_new_subs_class = ['', '', '']
-    a_new_shape = [1, 1, 1]
-    for sub, length in a_shape.items():
-        if sub in set_1:
-            a_new_subs_class[0] += sub
-            a_new_shape[0] *= length
-        elif sub in set_2:
-            a_new_subs_class[2] += sub
-            a_new_shape[2] *= length
-        else:
-            a_new_subs_class[1] += sub
-            a_new_shape[1] *= length
-
-    transpose_axes = []
-    for sub in ''.join(a_new_subs_class):
-        transpose_axes.append(a_subs.index(sub))
-
-    a_ = F.transpose(a, transpose_axes)
-    a_ = a_.reshape(a_new_shape)
-
-    # For the array b
-    b_new_subs_class = ['', '', '']
-    b_new_shape = [1, 1, 1]
-    for sub, length in b_shape.items():
-        if sub in set_1:
-            b_new_subs_class[0] += sub
-            b_new_shape[0] *= length
-        elif sub in set_2:
-            b_new_subs_class[1] += sub
-            b_new_shape[1] *= length
-        else:
-            b_new_subs_class[2] += sub
-            b_new_shape[2] *= length
-
-    transpose_axes = []
-    for sub in ''.join(b_new_subs_class):
-        transpose_axes.append(b_subs.index(sub))
-
-    b_ = F.transpose(b, transpose_axes)
-    b_ = b_.reshape(b_new_shape)
-
-    #################
-    # Target axes are reduced by F.batch_matmul and F.sum
-    c_ = F.matmul(a_, b_)
-    c_subs_class = [
-        a_new_subs_class[0], a_new_subs_class[1], b_new_subs_class[2]]
-
-    if set_4a:
-        size_sum = 1
-        for sub in set_4a:
-            size_sum *= a_shape[sub]
-            c_subs_class[1] = c_subs_class[1].replace(sub, '')
-        size_kept = a_new_shape[1] // size_sum
-        c_shape = c_.shape
-        c_ = c_.reshape(c_shape[0], size_kept, size_sum, c_shape[2])
-        c_ = F.sum(c_, axis=2)
-
-    if set_4b:
-        size_sum = 1
-        for sub in set_4b:
-            size_sum *= b_shape[sub]
-            c_subs_class[2] = c_subs_class[2].replace(sub, '')
-        size_kept = b_new_shape[2] // size_sum
-        c_shape = c_.shape
-        c_ = c_.reshape(c_shape[0], c_shape[1], size_kept, size_sum)
-        c_ = F.sum(c_, axis=3)
-
-    ############################
-    # The output array is rearranged to output shape
-    c_subs = ''.join(c_subs_class)
-    sub_to_size = {**a_shape, **b_shape}  # merging two dicts
-    c_shape = [sub_to_size[sub] for sub in c_subs]
-    c = c_.reshape(c_shape)
-
-    transpose_axes = []
-    for sub in out_subs:
-        transpose_axes.append(c_subs.index(sub))
-    c = c.transpose(transpose_axes)
-    return c
+    y = einsum(subs, *operands)
+    y.grad = np.ones_like(y.array)
+    y.backward()
